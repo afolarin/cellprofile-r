@@ -1,0 +1,15 @@
+Package: CellProfileR
+Type: Package
+Title: An interface in R for CellProfiler and CellProfiler Analyst Databases
+Version: 1.0.0
+Date: 2011-02-01
+Author: Dr Amos Folarin
+Maintainer: Amos Folarin <amosfolarin+cellprofile-r@gmail.com>
+URL: http://code.google.com/p/cellprofile-r/
+Description: CellProfiler (CP) and CellProfiler Analyst(CPA) are tools for analysing image sets of cells. The software is designed to enable biologists to easily quantitate phenotypes from thousands of images automatically. CellProfileR, a library for the statistical programming environment R, enables the users of CP/CPA to easily interface their databases with R. This is particularly useful where more sophisticated downstream analyses are required. Convenience functions and a number of workflows are provided.
+Reference:
+biocViews: CellBasedAssays, MicrotitrePlateAssay, CellBiology,  DataImport, Bioinformatics
+Depends: RMySQL, RSQLite, reshape
+Suggests: gplots
+License: GPL-2
+LazyLoad: yes

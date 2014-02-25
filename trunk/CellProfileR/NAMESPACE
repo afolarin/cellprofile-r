@@ -1,0 +1,14 @@
+
+## Packages required by CellProfileR
+#import(RMySQL, RSQLite, reshape, ggplots2)
+import(RMySQL, RSQLite, reshape)
+#importFrom(gplots, heatmap.2)
+
+
+
+##exportPattern("^[[:alpha:]]+")
+
+##export everything that does not start with a .
+exportPattern("^[^\\.]")
+
+

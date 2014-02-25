@@ -1,0 +1,306 @@
+%\VignetteIndexEntry{Example Drug Screen Timecourse Visualization with CellProfiler}
+%\VignetteKeywords{high-throughput image-based screen, cell differentiation assay}
+%\VignettePackage{CellProfileR}
+
+\documentclass[a4paper]{article}
+\usepackage{natbib}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+
+\title{Workflow1: Visualize a 96 Well Time Series}
+\author{Amos Akinola Folarin}
+\begin{document}
+
+<<foo,include=FALSE,echo=FALSE>>=
+options(width = 60, continue=" ", SweaveHooks=list(fig=function()
+par(mar=c(5.1, 4.1, 1.1, 2.1))))
+foo <- packageDescription("CellProfileR")
+@
+
+% Sweave options
+\SweaveOpts{keep.source=TRUE, width=6,height=8}
+
+
+\maketitle
+
+
+\section{Workflow Preface} 
+
+CellProfiler (CP) and CellProfiler Analyst (CPA) are popular open source
+applications that enable user defined image analysis pipelines to be carried out
+using a fairly intuitive interface. CellProfileR is an R package for interfacing
+with the output of these image analysis pipelines in R \citep{RTeam04}. The
+workflows provided in this package are indended to provide some idea of what one
+can do with CellProfiler data in R.
+
+In this workflow we will use the CellProfiler(CP)
+\verb@per_image@ database table supplied with the CellProfileR package. Although
+the table is supplied as a data.frame, it would be equivalent to using the
+CellProfileR \verb@loadTable()@ function to import the table from a CellProfiler
+database.
+
+The sql database table for this example and the supporting files can be found at
+the googlecode base \citep{CellProfileRSoftware}.
+
+As this would normally interface with a database, we have omitted the steps for
+importing the database table into R, but it could be easily achieved with
+CellProfileR \texttt{mysqlConnect} and \texttt{loadTable} functions using
+something like this:
+\begin{verbatim}
+# Using a mysql database or mysqlite, specify your
+# particular details foryour SQL database (not run here).
+con <- mysqlConnect("localhost", "db_name", "db_username", "db_password")
+per.img <- loadTable(database.connection=con, table.name="per_image")
+\end{verbatim}
+
+\section{Workflow 1}
+
+\subsection{Visualizing a Time Course Drug Screen} 
+This screen looked at identifying compounds that modulated differentiation of a
+stem cell line. To achieve this cells were transfected with a GFP construct that
+reported the induction of a gene known to mark cell differentiation. The cells
+were then imaged on an Incucyte FL live cell imager over a 66hr period, the data
+analysed using CellProfiler \citep{carpenter2006cellprofiler} this data is then
+cached in a MySQL database \citep{BartData}.
+
+The objective was to present the screen timecourse results in such a way as to
+visualize the entire timecourse over all compounds. The primary metric
+considered is the percentage of fluorescent cells expressing a green fluorescent
+protein (GFP) relative to a untreated control at each timepoint (each timepoint
+is 3hrs). Where this is increased consistently across replicates, indicates a
+compound that increases differentiation. Counts of differentiated cells using CP
+were made on images from the fluorescent channel and total cells were counted
+from phase contrast chanel images. There is however a background level of
+differentiation that occurs spontaneously, we are therefore only interested in
+compounds that modulate the \verb@%GFP@ expressing cells over the base rate of 
+the untreated controls.
+
+Finally we visualize the change in \verb@%GFP@ over time in all 96 wells at each
+timepoint Figure~\ref{fig:fig1} (page~\pageref{fig:fig1}) using a heatmap. 
+
+This information is taken from the \verb@per_image@ table however there is no
+reason one could not include additional data from CellProfiler Analyst if this
+was required.
+
+For the purpose of running this example, you can begin directly from the
+sequence below using the sample data provided.
+
+The package comes with the a pre-loaded \verb@per_image@ table from the
+experiment ("Stem-Cell") loaded table is included in the package data directory.
+
+
+<<setup>>=
+#required libraries and data
+library("CellProfileR")
+library("gplots")
+library("reshape")
+
+
+#Load the sample dataset workflow1
+data("StemCellScreen")
+@
+
+
+Calculate the \verb@%GFP = (Number of GFP Cells / Number Phase Contrast@
+\verb@Cells)*100 and remodel the data table -- we want %GFP over time x wells@
+matrix
+
+<<calculateTimeCourse>>=
+#First melt the table by time and well
+md <- melt(per.img, id=c("Image_Metadata_Hours", "Image_Metadata_Well"),
+measure.vars=c("Image_Count_GFPCells", "Image_Count_PhaseCells"))
+
+#Now cast this as a table summarising GFP and Total Cell as a percentage 
+# hours in rows, wells in columns...
+cd <- cast(md, Image_Metadata_Hours ~ Image_Metadata_Well,
+fun.aggregate=function(x){x[1]/x[2] * 100}) 
+
+
+#We want this in order of A1,A2,A3...
+time <- as.numeric(cd$"Image_Metadata_Hours")
+time.o <- order(time)
+wells <- colnames(cd)[-1]
+wells.a <- substr(wells, 0,1)
+wells.n <- as.numeric(substr(wells, 2,3))
+wells.o <- order(wells.a, wells.n)
+head(wells[wells.o], 10)
+
+
+cd.ordered <- cd[, -1] 	#remove time column (add as row names)
+rownames(cd.ordered) <- time 	#time is the row names
+cd.ordered <- cd.ordered[time.o, wells.o] #order rows, order columns 
+
+
+## some plots that might help with the analysis
+cd.ordered.t <- t(cd.ordered)
+rownames(cd.ordered.t)<- colnames(cd.ordered)
+colnames(cd.ordered.t)<- paste("t",rownames(cd.ordered))
+@
+
+
+Now Visualize the screen results Figure~\ref{fig:fig1} (page~\pageref{fig:fig1}).
+
+<<label=heatmapFig1>>=
+#heatmap.2 of gfp %
+heatmap.2(cd.ordered.t, dendrogram="none", Rowv=NA, Colv=NA, ylab = "Wells",
+xlab = "Time",col=bluered(100), trace="none", main="Heatmap of %GFP Cells",
+keysize=1)
+@
+
+
+\begin{figure}[ht]
+\begin{center}
+<<label=fig1, fig=TRUE, echo=FALSE>>=
+<<heatmapFig1>>
+@
+\end{center}
+\caption{Heatmap of the percentage of GFP positive cells (blue low, red high) 
+for 96 wells over the screen duration of 66hrs (time(1=3hr)).}
+\label{fig:fig1}
+\end{figure}
+
+
+
+\subsection{Relative to the Control Wells}
+
+In this data, the untreated controls also undergo spontaneous differentiation,
+albeit at a farily consistant rate. Control wells were included to establish
+whether there are compounds that induce/repress differentiation relative to the
+untreated baseline level Figure~\ref{fig:fig2} (page~\pageref{fig:fig2}). We
+therefore want to view the percentage GFP relative to the average percent GFP of
+the control replicates at each timepoint Figure~\ref{fig:fig3}
+(page~\pageref{fig:fig3}).
+
+<<label=controlNorm>>=
+
+#The control wells in this data are:
+control.wells <- c("A1", "A2", "C1", "C2", "E1", "E2", "G1", "G2", "B11", "D11",
+"F11", "H11", "B12", "D12", "F12", "H12")
+@
+
+
+There are a few wells where the treatment compound caused autofluorescence
+resulting in artefactual counts of GFP, in these cases \verb@>100%@ GFP is
+observed. This can cause a problem with the heatmap's visualization of the
+results, a simple solution is to replace these values.
+
+<<label=setUpperLim>>=
+#Specify any values over 100 percent  (not ideal solution, 
+# but helps with the dynamic range issue here)
+cd.ordered.t.x <- cd.ordered.t # cache
+cd.ordered.t[cd.ordered.t > 100] <- 101  
+@
+
+Now calculate the average of the control wells at each timepoint
+Figure~\ref{fig:fig2} (page~\pageref{fig:fig2}). 
+
+<<label=controlVals, fig=TRUE, include=FALSE>>=
+#Average control well values (for each timepoint), ignore NA values
+thresholds <- colMeans(cd.ordered.t[control.wells,])
+plot(thresholds, main="Average %GFP in Control Wells", xlab="Time", ylab="Well
+Average % GFP" )
+@
+
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=.47\linewidth]{workflow1-controlVals.pdf} 
+\caption{Percentage GFP in control vary over time(1=3hr).}
+\label{fig:fig2}
+\end{figure}
+
+
+<<label=subtractControl>>=
+#Subtract each row threshold from the row of the data, 0 is now the row 
+# control, we will try to make this white on the colorscale
+cd.centered <- t(t(cd.ordered.t) - thresholds)
+@
+
+
+<<label=visualizeHeatmap>>=
+#Get color.scale for the range of the matrix 
+color.s <- bluered(length(as.matrix(cd.centered)))
+
+#Aggregate control wells together 
+control.agg <- rbind(cd.centered[control.wells, ],
+cd.centered[!(rownames(cd.centered) %in% control.wells), ] )
+
+#Visualize Heatmap.2 of gfp % above or below untreated control at timepoint t 
+# centered on 0=average(control at time t), blue=below control at time t, 
+# red=above control at time t
+x <- data.matrix(control.agg)  
+@
+
+
+<<label=heatmapFig3>>=
+heatmap.2(x, rowsep=16, sepcol="black", Rowv=NA, Colv=NA, col=color.s,
+trace="none", symbreaks=TRUE, scale="none", xlab="Time", ylab="Wells",
+main="Heatmap of %GFP Cells")
+@
+
+
+\begin{figure}[ht]
+\begin{center}
+<<label=fig3, fig=TRUE,echo=FALSE>>=
+<<heatmapFig3>>
+@
+
+\end{center}
+\caption{A heatmap visualization of the percentage of GFP relative to the
+untreated control over time(1=3hr). Bluered colorscale, centered on
+white=average(control at time t), blue=below control at time t, red=above
+control at time t. The control wells have also been aggregated in the first 16
+rows (above the black line).}
+\label{fig:fig3}
+\end{figure}
+
+Now it is easy to see which wells have modulated levels of differentiation above
+or below the untreated control and how this changes over time. Simple t-tests
+can be conducted to see if the changes are sigificant.
+
+
+
+<<sessionInfo>>=
+sessionInfo()
+@
+
+\begin{thebibliography}{}
+
+\bibitem[{R Development Core Team}(2004)]{RTeam04}
+{R Development Core Team}.
+\newblock \emph{R: A Language and Environment for Statistical Computing}.
+\newblock R Foundation for Statistical Computing, Vienna, Austria, 2004.
+\newblock ISBN ISBN 3-900051-00-3.
+\newblock URL \url{http://www.R-project.org/}.
+
+\bibitem[Folarin, A.~A.(2011)]{CellProfileRSoftware}
+Folarin, A.~A.(2011).
+\newblock http://code.google.com/p/cellprofile-r/
+\newblock CellProfile-R: An Interface to CellProfiler/CellProfiler Analyst in R.
+
+
+
+\bibitem[Carpenter, A.~E.(2006)]{carpenter2006cellprofiler}
+Carpenter, A.~E.(2006)
+\newblock CellProfiler: image analysis software for identifying and quantifying 
+cell phenotypes
+\newblock Carpenter, A.E. and Jones, T.R. and Lamprecht, M.R. and Clarke, C. and
+Kang, I.H. and Friman, O. and Guertin, D.A. and Chang, J.H. and Lindquist, R.A.
+and Moffat, J. and others
+\newblock Genome biology
+\newblock 7
+\newblock 10
+\newblock R100
+\newblock 2006
+
+
+\bibitem[Baranowski, B.(2011)]{BartData}
+Baranowski, B.(2011).
+\newblock UCL Cancer Institute, London UK.
+\newblock Stem Cell Drug Screen.
+\newblock \emph{Unpublished Data.}
+
+
+\end{thebibliography}
+
+\end{document}

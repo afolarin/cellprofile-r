@@ -1,0 +1,277 @@
+%\VignetteIndexEntry{Example of CellTracking with CellProfiler}
+%\VignetteKeywords{cell tracking}
+%\VignettePackage{CellProfileR}
+
+\documentclass[a4paper]{article}
+\usepackage{natbib}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+
+\title{Workflow2: Cell Tracking With CellProfiler}
+\author{Amos Akinola Folarin}
+\begin{document}
+
+<<foo,include=FALSE,echo=FALSE>>=
+options(width = 60, continue=" ", SweaveHooks=list(fig=function()
+par(mar=c(5.1, 4.1, 1.1, 2.1))))
+foo <- packageDescription("CellProfileR")
+@
+
+% Sweave options
+\SweaveOpts{keep.source=TRUE, width=6,height=8}
+
+
+\maketitle
+
+\section{Workflow Preface} 
+
+CellProfiler (CP) and CellProfiler Analyst (CPA) are popular open source
+applications that enable user defined image analysis pipelines to be carried out
+using a fairly intuitive interface. CellProfileR is an R package for interfacing
+with the output of these image analysis pipelines in R \citep{RTeam04}. The
+workflows provided in this package are indended to provide some idea of what one
+can do with CellProfiler data in R.
+
+With cell image analysis it is rare that the cells in field will be of a uniform
+type, often there will be mixed populations. To analyse these subpopulations
+separately one may employ CellProfiler Analyst to perform classification to
+stratify the \verb@object_table@.
+
+In this workflow we will use the CellProfiler(CP) and CellProfiler Analyst (CPA)
+\citep{carpenter2006cellprofiler} to track the locations of cells in a single
+well imaged every 10 mins over a number of hours. The objective is to assertain
+whether cells treated with a particular compound persist longer in metaphase,
+but this could easily be adapted to measure other measured aspects of a
+sub-population of cells withing the field.
+
+To do this we use the pipeline module TrackObjects. However we
+are interested in tracking two distinct populations mitotic phase and
+non-mitotic phase. To achieve this we first classify all the objects into these
+two classes using CPA then combine the \verb@per_image@, \verb@per_object@ and
+\verb@class_table@ using the unifyTable function of CellProfileR.
+
+The sql database table for this example and the supporting files can be found at
+the googlecode base \citep{CellProfileRSoftware}.
+
+As this would normally interface with a database, we have omitted the steps for
+importing the database table into R, but it could be easily achieved with
+CellProfileR \texttt{mysqlConnect}, \texttt{createUnifiedTable} and 
+\texttt{loadTable} functions using something like this:
+\begin{verbatim}
+# Using a mysql database or mysqlite, specify your
+# particular details foryour SQL database (not run here).
+con <- mysqlConnect("localhost", "db_name", "db_username", "db_password")
+
+#Join the 3 tables and create a table in the database to hold the output
+createUnifiedTable(con, "per_class", per.image.cols=c("Image_Metadata_Hour",
+"Image_Metadata_Plate", "Image_Metadata_Well",
+"Image_PathName_Phase","Image_FileName_Phase"))
+
+#load the merged table
+uni.tab <- loadTable(database.connection=con, table.name="unified_table")
+\end{verbatim}
+
+
+\section{Workflow 2}
+
+\subsection{Cell Tracking} 
+The objective here is to assess the length of time a metaphase object remains in
+field, this is done by tracking all objects and classifying the metaphase subset
+using CPA. The distribution of metaphase lifetime durations could be evaluated
+by accessing the \verb@TrackObjects_Lifetime@ column from the TrackObjects
+module for the subset of metaphase cells.
+
+For the purpose of running this example, you can begin directly from the
+sequence below using the sample data provided, for portability reasons this
+dataset is a subset of the screen including the first 50 timepoints (each
+timepoint = 10mins).
+
+The dataset comes with the a pre-loaded dataframe \verb@unified_table@ table
+from the experiment ("CellTracking") loaded table is included in the package
+data directory \citep{DavideData}.
+
+
+<<setup>>=
+#required libraries and data
+library("CellProfileR")
+
+#Load the sample dataset workflow1
+data("CellTracking")
+@
+
+
+Extract the metaphase objects....
+
+<<>>=
+#lifetimes of metaphase cells
+metaph.lifet <- uni.tab[uni.tab$class %in% "metaphase",
+"CellAndNuclei_TrackObjects_Label_50"]
+#lifetimes of non metaphase cells
+non.metaph.lifet <- uni.tab[uni.tab$class %in% "positive",
+"CellAndNuclei_TrackObjects_Label_50"]
+@
+
+
+
+The cell tracks over the first 50 timepoints (8.3 hrs).
+
+<<label=cellTracksFig1>>=
+## select metaphase obj only
+uni.tab.m <- uni.tab[uni.tab$class %in% "metaphase", ]
+plot(uni.tab.m$CellAndNuclei_Location_Center_X,
+uni.tab.m$CellAndNuclei_Location_Center_Y, xlab="Location x-axis (Pixels)",
+ylab="Location y-axis (Pixels)")
+@
+
+
+\begin{figure}[ht]
+\begin{center}
+<<label=fig1, fig=TRUE,echo=FALSE>>=
+<<cellTracksFig1>>
+@
+\end{center}
+\caption{Tracks made over 8.3 hrs by cells classed as metaphase by CellProfiler
+Analyst}
+\label{fig:fig1}
+\end{figure}
+
+
+<<label=cellTracksFig2>>=
+## select non-metaphase obj only
+uni.tab.nm <- uni.tab[uni.tab$class %in% "positive", ]
+plot(uni.tab.nm$CellAndNuclei_Location_Center_X,
+uni.tab.nm$CellAndNuclei_Location_Center_Y, xlab="Location x-axis (Pixels)",
+ylab="Location y-axis (Pixels)")
+@
+
+
+\begin{figure}[ht]
+\begin{center}
+<<label=fig2, fig=TRUE,echo=FALSE>>=
+<<cellTracksFig2>>
+@
+\end{center}
+\caption{Tracks made over 8.3 hrs by cells classed as not-metaphase by
+CellProfiler Analyst}
+\label{fig:fig2}
+\end{figure}
+
+
+
+
+The lifetime distributions of each object class: metaphase population
+Figure~\ref{fig:fig3} (page~\pageref{fig:fig3}) and non-metaphse population Figure~\ref{fig:fig4} (page~\pageref{fig:fig4}).
+
+
+<<label=objectLifetime>>=
+track.cols <-c("CellAndNuclei_TrackObjects_DistanceTraveled_50",
+"CellAndNuclei_TrackObjects_IntegratedDistance_50",
+"CellAndNuclei_TrackObjects_Label_50", "CellAndNuclei_TrackObjects_Lifetime_50",
+"CellAndNuclei_TrackObjects_Linearity_50",
+"CellAndNuclei_TrackObjects_Parent_50",
+"CellAndNuclei_TrackObjects_TrajectoryX_50",
+"CellAndNuclei_TrackObjects_TrajectoryY_50", "class")
+
+sp.m <- split.data.frame(uni.tab.m[, track.cols],
+uni.tab.m$"CellAndNuclei_TrackObjects_Label_50")
+
+sp.nm <- split.data.frame(uni.tab.nm[, track.cols],
+uni.tab.nm$"CellAndNuclei_TrackObjects_Label_50")
+
+last.lifetime.m <- lapply(sp.m, function(x){return(x[nrow(x),
+"CellAndNuclei_TrackObjects_Lifetime_50"])})
+
+last.lifetime.nm <- lapply(sp.nm, function(x){return(x[nrow(x),
+"CellAndNuclei_TrackObjects_Lifetime_50"])})
+@
+
+
+
+
+<<label=lifetimeFig3, fig=TRUE, include=FALSE>>=
+hist(unlist(last.lifetime.m), main="Distribution of Metaphase Lifetime")
+mean(unlist(last.lifetime.m))
+sd(unlist(last.lifetime.m))
+@
+
+
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=.47\linewidth]{workflow2-lifetimeFig3.pdf} 
+\caption{The distribution of Metaphase Cell lifetimes.}
+\label{fig:fig3}
+\end{figure}
+
+
+
+<<label=lifetimeFig4, fig=TRUE, include=FALSE>>=
+hist(unlist(last.lifetime.nm), , main="Distribution of Non-Metaphase Lifetime")
+mean(unlist(last.lifetime.nm))
+sd(unlist(last.lifetime.nm))
+@
+
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=.47\linewidth]{workflow2-lifetimeFig4.pdf} 
+\caption{The distribution of non-Metaphase Cell lifetimes.}
+\label{fig:fig4}
+\end{figure}
+
+Note: this data is purely demonstrative, the these average lifetimes are not
+representative because the data has been cut to only 50 timepoints.
+
+\section{Conclusion}
+Using cell tracking opens the possiblitly of comparing specific cells witing a
+heterogeneous population in time looking at how any measured parameter changes
+for a particular cell rather than looking at the average changes is a powerful
+tool for high content screening.
+
+
+\pagebreak
+<<sessionInfo>>=
+sessionInfo()
+@
+
+\begin{thebibliography}{}
+
+\bibitem[{R Development Core Team}(2004)]{RTeam04}
+{R Development Core Team}.
+\newblock \emph{R: A Language and Environment for Statistical Computing}.
+\newblock R Foundation for Statistical Computing, Vienna, Austria, 2004.
+\newblock ISBN ISBN 3-900051-00-3.
+\newblock URL \url{http://www.R-project.org/}.
+
+
+\bibitem[Folarin, A.~A.(2011)]{CellProfileRSoftware}
+Folarin, A.~A.(2011).
+\newblock http://code.google.com/p/cellprofile-r/
+\newblock CellProfile-R: An Interface to CellProfiler/CellProfiler Analyst in R.
+
+
+
+\bibitem[Carpenter, A.~E.(2006)]{carpenter2006cellprofiler}
+Carpenter, A.~E.(2006)
+\newblock CellProfiler: image analysis software for identifying and quantifying 
+cell phenotypes
+\newblock Carpenter, A.E. and Jones, T.R. and Lamprecht, M.R. and Clarke, C. and
+Kang, I.H. and Friman, O. and Guertin, D.A. and Chang, J.H. and Lindquist, R.A.
+and Moffat, J. and others
+\newblock Genome biology
+\newblock 7
+\newblock 10
+\newblock R100
+\newblock 2006
+
+
+\bibitem[Danovi,D.(2010)]{DavideData}
+Danovi,D.(2010).
+\newblock UCL Cancer Institute, London UK.
+\newblock Cancer Drug Screen.
+\newblock \emph{Unpublished Data.}
+
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,245 @@
+%\VignetteIndexEntry{An example of High Content Screening using CellProfiler}
+%\VignetteKeywords{morphology, high-throughput image-based screen, high-content screen, multi-parameter phenotypic distance}
+%\VignettePackage{CellProfileR}
+
+\documentclass[a4paper]{article}
+\usepackage{natbib}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+
+\title{Workflow3: High-Content Drug Screening of Morphological Phenotypes in
+Cancer}
+
+\author{Amos Akinola Folarin}
+\begin{document}
+
+<<foo,include=FALSE,echo=FALSE>>=
+options(width = 60, continue=" ", SweaveHooks=list(fig=function()
+par(mar=c(5.1, 4.1, 1.1, 2.1))))
+foo <- packageDescription("CellProfileR")
+@
+
+% Sweave options
+\SweaveOpts{keep.source=TRUE, width=6,height=8}
+
+
+\maketitle
+
+\section{Workflow Preface} 
+
+CellProfiler (CP) and CellProfiler Analyst (CPA) are popular open source
+applications that enable user defined image analysis pipelines to be carried out
+using a fairly intuitive interface. CellProfileR is an R package for interfacing
+with the output of these image analysis pipelines in R \citep{RTeam04}. The
+workflows provided in this package are indended to provide some idea of what one
+can do with CellProfiler data in R.
+
+In this demonstration, the data here comes from a high content screen of
+compounds on a tumour cell line, here CellProfiler has been used to score 111
+different parameters that relate to the morphology and characteristics of cells
+in phase contrast images. A library of 160 compounds have been applied to the
+cells.
+
+This pipeline uses the data from the CellProfiler analysis of a drug screen
+carried out by \citep{DavideData}. The screen used a glioblastoma stem cell
+line to screen of the a panel of kinases inhibitors. 
+
+Each of the 160 inhibitors were run in triplicate on (6 96 well plates) and an
+hourly phase contrast image set was produced over 52 hours using an Incucyte
+Live Imager. For the purposes of this demonstrative dataset only one replicate
+and the hourly timepoints, the sample data \verb@DrugScreen@ only includes data 
+from hour 20. 
+
+The sql database table for this example and the supporting files can be found at
+the googlecode base \citep{CellProfileRSoftware}.
+
+As this would normally interface with a database, we have omitted the steps for
+importing the database table into R, but it could be easily achieved with
+CellProfileR \texttt{mysqlConnect} and \texttt{loadTable} functions using
+something like this:
+
+\begin{verbatim}
+# Using a mysql database or mysqlite, specify your
+# particular details foryour SQL database (not run here).
+con <- mysqlConnect("localhost", "db_name", "db_username", "db_password")
+per.img <- loadTable(database.connection=con, table.name="per_image")
+\end{verbatim}
+
+
+\section{Workflow 3}
+
+\subsection{Unsupervised Clustering of the Drug Screen Data} 
+CellProfiler can be used to measure a wide range of characteristics of cell
+morphology, the objective of this workflow was to identify cells that showed a
+change in morphology (e.g. apoptosis) in response to treatment with a compound
+relative to the untreated cells. 
+
+The dataset comes with the a pre-loaded dataframe per.img.s of the
+\verb@per_image@ table from the experiment ("GBMDrugScreen") loaded table is
+included in the package data directory.
+
+
+<<setup>>=
+#required libraries and data
+library("CellProfileR")
+library("gplots")
+library("reshape")
+
+#Load the sample dataset workflow1
+data("GBMDrugScreen")
+@
+
+
+
+In this example we will use a two unsupervised clustering methods to identify at
+a glance the wells where morphological changes have been induced by the
+compounds. It is worth noting that these changes may be subtle, and not
+necessarily picked up by just looking at the images.
+
+The screen is run on 6 96 well plates, 80 compounds are run on each plate with
+the remaining 16 wells on each plate contain untreated controls (DMSO only).
+This dataset contains two halves of a 160 inhibitor library, the first 80
+compounds on three replicated plates: "G179-plateI", "G179-plateIII",
+"G179-plateV"; similarly the second set of 80 compounds are on "G179-plateII",
+"G179-plateIV", "G179-plateVI". For this example we will use the first set of 80
+compounds.
+
+Let's look at the data for the cells 20 hours after the compounds were applied.
+
+<<>>=
+#Select data from timepoint 20 from the GBMDrugScreen per_image table per.img.s
+t20 <-per.img.s[per.img.s$"Image_Metadata_Hour" == 20 ,]
+
+#Select data from the first 80 compounds - on plates I, III, V
+lib1 <- t20[t20$Image_Metadata_Plate %in% c("G179-plateI", "G179-plateIII",
+"G179-plateV"), ]
+
+#store the well indices
+l.wellid <- lib1$"Image_Metadata_Well"
+
+
+#a list of columns we do not want to include in the clustering
+exclude.cols <- c("ImageNumber", "Image_Count_CellAndNuclei",
+"Image_FileName_Phase", "Image_Group_Index", "Image_Group_Number",
+"Image_MD5Digest_Phase", "Image_Metadata_Hour", "Image_Metadata_ImagesPerWell",
+"Image_Metadata_Plate", "Image_Metadata_Well", "Image_PathName_Phase",
+"Mean_CellAndNuclei_Location_Center_X", "Mean_CellAndNuclei_Location_Center_Y")
+
+#remove these columns from the data
+lib1 <- lib1[, !colnames(lib1) %in% exclude.cols]
+
+#average the values from each of the 3 replicates, using the stored well id as
+#the grouping variable
+lib1.m <- aggregate(lib1, list(l.wellid), mean, na.rm=TRUE)
+
+#make some rownames 
+rownames(lib1.m) <- paste("L1", lib1.m$Group.1, sep=".")
+# remove the Group.1 column, generated by the aggregate function
+lib1.m <- lib1.m[,-1]
+
+
+#finally, remove any columns that are uninformative (required for clustering)
+lib1.m <- lib1.m[, sd(lib1.m) != 0]
+
+@
+
+
+Now some visualization of the screen results using two clustering methods. 1)
+the heatmap and 2) Principal Component Analysis
+
+The heatmap is quite useful to identify which of the morphological parameters
+are changing in the outliers, how these parameters are related to each other and
+which compounds induce similar morphology in the cells.
+
+
+<<label=heatmapFig1, fig=TRUE, include=FALSE>>=
+##heatmap
+heatmap(data.matrix(lib1.m), scale="column", cexRow=0.3, cexCol=0.3)
+@
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=1.3\linewidth]{workflow3-heatmapFig1.pdf} 
+\caption{Clustering of Morphological Parameters @ hr 20.}
+\label{fig:fig1}
+\end{figure}
+
+
+
+Using Principle Component Analysis visualize the high-content screen, this
+useful for picking out the outliers and shows how these are related to each
+other. For the most part the screen here shows that most of the compounds don't
+change the cells appreciably from the untreated controls.
+
+<<label=pcaFig2, fig=TRUE, include=FALSE>>=
+## param label names too long, & cluter fig
+lib1.p <- lib1.m
+colnames(lib1.p) <- 1:ncol(lib1.p) 
+#plot the first two components of the PCA analysis
+biplot(prcomp(lib1.p, scale = TRUE))
+@
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=1\linewidth]{workflow3-pcaFig2.pdf} 
+\caption{Principle Component Analysis of Morphological Parameters @ hr 20.}
+\label{fig:fig2}
+\end{figure}
+
+
+In this instance, each of the clustering results shows that the compound in well
+"E6" is morphologically different. This compound appears to block the transition
+of cells in metaphase, the result is an accumulation of rounded cells
+characteristic of the pro-metaphase cell.
+
+You can try the same analysis using the second set of compounds on plates II, 
+III and VI.
+
+
+\pagebreak
+<<sessionInfo>>=
+sessionInfo()
+@
+
+\begin{thebibliography}{}
+
+
+\bibitem[{R Development Core Team}(2004)]{RTeam04}
+{R Development Core Team}.
+\newblock \emph{R: A Language and Environment for Statistical Computing}.
+\newblock R Foundation for Statistical Computing, Vienna, Austria, 2004.
+\newblock ISBN ISBN 3-900051-00-3.
+\newblock URL \url{http://www.R-project.org/}.
+
+
+\bibitem[Folarin, A.~A.(2011)]{CellProfileRSoftware}
+Folarin, A.~A.(2011).
+\newblock http://code.google.com/p/cellprofile-r/
+\newblock CellProfile-R: An Interface to CellProfiler/CellProfiler Analyst in R.
+
+
+
+\bibitem[Carpenter, A.~E.(2006)]{carpenter2006cellprofiler}
+Carpenter, A.~E.(2006)
+\newblock CellProfiler: image analysis software for identifying and quantifying 
+cell phenotypes
+\newblock Carpenter, A.E. and Jones, T.R. and Lamprecht, M.R. and Clarke, C. and
+Kang, I.H. and Friman, O. and Guertin, D.A. and Chang, J.H. and Lindquist, R.A.
+and Moffat, J. and others
+\newblock Genome biology
+\newblock 7
+\newblock 10
+\newblock R100
+\newblock 2006
+
+
+\bibitem[Danovi,D.(2010)]{DavideData}
+Danovi,D.(2010).
+\newblock UCL Cancer Institute, London UK.
+\newblock Cancer Drug Screen.
+\newblock \emph{Unpublished Data.}
+
+
+\end{thebibliography}
+
+\end{document}
